@@ -1,0 +1,28 @@
+# Configuration file for conda
+
+name: generative-playground
+channels:
+  - pytorch
+  - conda-forge
+  - defaults
+dependencies:
+    # Development deps
+    - ipython
+    - isort
+    - jupyter
+    - jupyterlab
+    - jupyterlab-spellchecker
+    - llvm-openmp
+    - matplotlib
+    - pandas
+    - pip
+    - scikit-learn
+    - python=3.9.*
+
+
+    - pip:
+        - torchvision
+        - torchaudio
+        - torch==2.0.*
+        - functorch
+        # - -e .
