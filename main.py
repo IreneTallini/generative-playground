@@ -195,8 +195,8 @@ def train_classifier():
     model = MoonClassifier()
     data_provider = MoonContrastiveDataProvider()
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-5)
-    num_timesteps = 50000
-    ckpt_path = Path("classifier_contrastive.pt")
+    num_timesteps = 100000
+    ckpt_path = Path(f"classifier_contrastive_{num_timesteps}.pt")
     if ckpt_path.exists():
         model.load_state_dict(torch.load(ckpt_path))
     else:
@@ -263,7 +263,7 @@ def cond_sample():
 def logit_search_sample():
     # Load classifier
     device = "cpu"
-    ckpt_path = Path("classifier_contrastive.pt")
+    ckpt_path = Path(f"classifier_contrastive_10000.pt")
     classifier = MoonClassifier().to(device)
     classifier.load_state_dict(torch.load(ckpt_path))
     # perform gradient ascent on the logit
@@ -275,15 +275,15 @@ def logit_search_sample():
         jacobian = jacobian_fn_vmap(points)
         return jacobian
 
-    alpha = 0.0001
-    x = np.random.uniform(size=(batch_size, 2), low=-1.2, high=1.2)
+    alpha = 0.001
+    x = np.random.uniform(size=(batch_size, 2), low=-5, high=5)
     x = torch.tensor(x, dtype=torch.float32, device=device, requires_grad=True)
-    for i in range(1000):
+    for i in range(10000):
         grad = batched_jacobian(x).squeeze(1)
-        x = x + alpha * grad
+        x = x - alpha * grad
     # plot logit landscape on a grid
     n_points_grid = 100
-    grid_x, grid_y = torch.meshgrid(torch.linspace(-1.2, 1.2, n_points_grid), torch.linspace(-1.2, 1.2, n_points_grid))
+    grid_x, grid_y = torch.meshgrid(torch.linspace(-5, 5, n_points_grid), torch.linspace(-5, 5, n_points_grid))
     grid_points = torch.cat([grid_x.reshape(-1, 1), grid_y.reshape(-1, 1)], dim=1)
     logits_grid = classifier(grid_points).detach().numpy()
     plt.figure()
@@ -294,4 +294,3 @@ def logit_search_sample():
 
 if __name__ == '__main__':
     train_classifier()
-    logit_search_sample()
