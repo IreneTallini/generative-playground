@@ -20,7 +20,20 @@ class MoonDataProvider():
         noisy_data = data + t * np.random.randn(num_samples, 2)
         return noisy_data, data, labels
 
-# classifier for moon dataset
+class MoonContrastiveDataProvider():
+    def __init__(self):
+        self.mean = np.array([0.5, 0.25])
+
+    def get_data(self, t=0., num_samples=64):
+        # sample a bernoulli variable
+        labels = np.random.binomial(1, 0.5, size=(num_samples,)).astype(bool)
+        data, _ = datasets.make_moons(n_samples=num_samples)
+        data = data - self.mean
+        data_rand = np.random.uniform(low=-5., high=5., size=(num_samples, 2))
+        data[~labels] = data_rand[~labels]
+        noisy_data = None
+        return noisy_data, data, labels
+
 class MoonClassifier(nn.Module):
     def __init__(self):
         super().__init__()
@@ -180,14 +193,14 @@ def train_score_model():
 
 def train_classifier():
     model = MoonClassifier()
-    data_provider = MoonDataProvider()
+    data_provider = MoonContrastiveDataProvider()
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-5)
     num_timesteps = 50000
-    ckpt_path = Path("classifier.pt")
+    ckpt_path = Path("classifier_contrastive.pt")
     if ckpt_path.exists():
         model.load_state_dict(torch.load(ckpt_path))
     else:
-        for i in range(num_timesteps):
+        for i in tqdm(range(num_timesteps)):
             _, x, label = data_provider.get_data()
             x_t = torch.tensor(x, dtype=torch.float32)
             label_t = torch.tensor(label, dtype=torch.float32)
@@ -217,7 +230,7 @@ def train_classifier():
 def cond_sample():
     target_label = 1
     n = 500
-    device = "cuda:0"
+    device = "cpu"
     batch_size = 64
     sigma_min = 0.0001
     sigma_max = 2.
@@ -247,6 +260,38 @@ def cond_sample():
     plt.scatter(x_gt[:, 0], x_gt[:, 1], c='b', s=1)
     plt.savefig('sample_cond_wrong.png')
 
+def logit_search_sample():
+    # Load classifier
+    device = "cpu"
+    ckpt_path = Path("classifier_contrastive.pt")
+    classifier = MoonClassifier().to(device)
+    classifier.load_state_dict(torch.load(ckpt_path))
+    # perform gradient ascent on the logit
+    batch_size = 64
+    # sample a random uniform 2D point
+    def batched_jacobian(points):  # [B, D] ->
+        jacobian_fn = torch.func.jacfwd(lambda x: classifier(x)[0])
+        jacobian_fn_vmap = torch.vmap(jacobian_fn)  # [B, D] -> [B, D, D]
+        jacobian = jacobian_fn_vmap(points)
+        return jacobian
+
+    alpha = 0.0001
+    x = np.random.uniform(size=(batch_size, 2), low=-1.2, high=1.2)
+    x = torch.tensor(x, dtype=torch.float32, device=device, requires_grad=True)
+    for i in range(1000):
+        grad = batched_jacobian(x).squeeze(1)
+        x = x + alpha * grad
+    # plot logit landscape on a grid
+    n_points_grid = 100
+    grid_x, grid_y = torch.meshgrid(torch.linspace(-1.2, 1.2, n_points_grid), torch.linspace(-1.2, 1.2, n_points_grid))
+    grid_points = torch.cat([grid_x.reshape(-1, 1), grid_y.reshape(-1, 1)], dim=1)
+    logits_grid = classifier(grid_points).detach().numpy()
+    plt.figure()
+    plt.scatter(grid_points[:, 0], grid_points[:, 1], c=logits_grid[:, 0])
+    plt.colorbar()
+    plt.scatter(x.cpu().detach()[:, 0], x.cpu().detach()[:, 1], c='r', s=3)
+    plt.savefig('sample_logit_search.png')
 
 if __name__ == '__main__':
-    cond_sample()
+    train_classifier()
+    logit_search_sample()
