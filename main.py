@@ -1,4 +1,5 @@
 "This code implements a simple score matching model for the moons dataset"
+from matplotlib import pyplot as plt
 import torch
 import numpy as np
 from pathlib import Path
@@ -15,11 +16,12 @@ SIGMA_MAX = 2.0
 RHO = 7
 N_SAMPLES_TRAIN = 10000
 N_SAMPLES_VAL = 500
+NUM_EPOCHS_TRAIN = 10
 NUM_TIMESTEPS = 10000
-DEVICE = "cuda:0"
+DEVICE = "cpu"
 LR = 1e-5
-CLASSIFIER_CKPT = "classifier_contrastive_10000.pt"
-SCORE_CKPT = "model_10000ts.pt"
+CLASSIFIER_CKPT = "classifier_contrastive.pt"
+SCORE_CKPT = "score_model.pt"
 SIGMA_SCHEDULE = [
     (
         SIGMA_MAX ** (1 / RHO)
@@ -32,49 +34,51 @@ SIGMA_SCHEDULE = [
 ]
 
 
-def train_score_model():
-    """
-    Trains the DenoiserModel using the MoonDataProvider and saves a checkpoint.
-    """
+def maybe_load_checkpoint(model, ckpt_path):
+    """Loads model weights if checkpoint file exists."""
+    if ckpt_path.exists():
+        print(f"Loading model from checkpoint {ckpt_path}")
+        model.load_state_dict(torch.load(ckpt_path))
 
+
+def train_score_model():
+    """Trains the DenoiserModel on the MoonDataset and saves a checkpoint."""
     model = DenoiserModel(sigma_schedule=SIGMA_SCHEDULE, device=DEVICE)
-    data_provider = MoonDataset(num_samples=N_SAMPLES_TRAIN, contrastive=False)
+    dataset = MoonDataset(num_samples=N_SAMPLES_TRAIN)
     data_loader = torch.utils.data.DataLoader(
-        data_provider, batch_size=BATCH_SIZE, shuffle=True
+        dataset, batch_size=BATCH_SIZE, shuffle=True
     )
     optimizer = torch.optim.Adam(model.parameters(), lr=LR)
 
     # Implement checkpointing
     ckpt_path = Path(SCORE_CKPT)
-    if ckpt_path.exists():
-        print("Loading model from checkpoint")
-        model.load_state_dict(torch.load(ckpt_path))
-    else:
-        print("Training model from scratch")
-        for x_noisy, x, t in tqdm(data_loader):
+    maybe_load_checkpoint(model, ckpt_path)
+    for _ in tqdm(range(NUM_EPOCHS_TRAIN)):
+        for x_noisy, x, t in data_loader:
+            x_noisy, x, t = x_noisy.to(DEVICE), x.to(DEVICE), t.to(DEVICE)
             denoised_x = model(x_noisy=x_noisy, t=t)
             loss = torch.mean((x - denoised_x) ** 2)
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
-        torch.save(model.state_dict(), ckpt_path)
+    torch.save(model.state_dict(), ckpt_path)
 
 
 def train_classifier():
-    """
-    Trains the MoonClassifier using the MoonContrastiveDataProvider and saves a checkpoint.
-    """
+    """Trains the MoonClassifier on the ContrastiveMoonDataset and saves a checkpoint."""
     model = MoonClassifier()
     data_provider = ContrastiveMoonDataset(num_samples=N_SAMPLES_TRAIN)
+    data_loader = torch.utils.data.DataLoader(
+        data_provider, batch_size=BATCH_SIZE, shuffle=True
+    )
     optimizer = torch.optim.Adam(model.parameters(), lr=LR)
     ckpt_path = Path(CLASSIFIER_CKPT)
-    if ckpt_path.exists():
-        model.load_state_dict(torch.load(ckpt_path))
-    else:
-        for _, x, label in tqdm(data_provider):
+    maybe_load_checkpoint(model, ckpt_path)
+    for _ in tqdm(range(NUM_EPOCHS_TRAIN)):
+        for x, label in data_loader:
             # transform in one hot encoding
             label = torch.nn.functional.one_hot(
-                label.to(torch.int64), num_classes=2
+                label, num_classes=2
             ).to(torch.float32)
             pred = model(x)
             # cross entropy loss
@@ -85,39 +89,21 @@ def train_classifier():
     torch.save(model.state_dict(), ckpt_path)
 
 
-def cond_sample():
-    """
-    Loads a trained model and classifier, then generates samples conditioned on a target label.
-    """
-    target_label = 1
+def sample_with_score():
+    """Samples from the trained score model and returns the generated data."""
     device = "cpu"
     
     # Load score model
     score_ckpt_path = Path(SCORE_CKPT)
     model = DenoiserModel(sigma_schedule=SIGMA_SCHEDULE, device=device)
-    model.load_state_dict(torch.load(score_ckpt_path))
+    maybe_load_checkpoint(model, score_ckpt_path)
     
-    # Load classifier
-    classifier_ckpt_path = Path(CLASSIFIER_CKPT)
-    classifier = MoonClassifier().to(device)
-    classifier.load_state_dict(torch.load(classifier_ckpt_path))
-    
-    # Sample from the model conditioned on the label
-    label_t = torch.nn.functional.one_hot(target_label.to(torch.int64), num_classes=2).to(
-        torch.float32
-    )
-    x_guided = (
-        model.sample(n=N_SAMPLES_VAL, classifier=classifier, target_label=label_t)
-        .cpu()
-        .detach()
-        .numpy()
-    )
+    x_guided = model.sample(n=N_SAMPLES_VAL)
+    return x_guided
 
 
-def logit_search_sample():
-    """
-    Performs logit-based gradient search using the classifier and visualizes the results.
-    """
+def sample_with_classifier_logit_search():
+    """Performs logit-based gradient search using the classifier."""
     # Load classifier
     device = "cpu"
     ckpt_path = Path(CLASSIFIER_CKPT)
@@ -131,13 +117,27 @@ def logit_search_sample():
         return jacobian
 
     alpha = 0.001
-    x = np.random.uniform(size=(BATCH_SIZE, 2), low=-5, high=5)
+    x = np.random.uniform(size=(N_SAMPLES_VAL, 2), low=-5, high=5)
     x = torch.tensor(x, dtype=torch.float32, device=device, requires_grad=True)
-    for _ in range(10000):
+    for _ in tqdm(range(10000)):
         grad = batched_jacobian(x).squeeze(1)
         x = x - alpha * grad
+    return x
 
 
 if __name__ == "__main__":
+    print("Training score model")
+    train_score_model()
+    print("Training classifier")
     train_classifier()
-    logit_search_sample()
+    print("Sampling from score model")
+    x_score = sample_with_score().detach().numpy()
+    print("Sampling from classifier")
+    x_class = sample_with_classifier_logit_search().detach().numpy()
+    
+    # scatter plot of the two methods
+    plt.figure()
+    plt.scatter(x_class[:, 0], x_class[:, 1], c="r", label="Classifier")
+    plt.scatter(x_score[:, 0], x_score[:, 1], c="b", label="Score")
+    plt.legend()
+    plt.savefig("comparison.png")

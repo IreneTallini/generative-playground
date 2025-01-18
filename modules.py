@@ -5,6 +5,7 @@ from tqdm import tqdm
 
 
 class MoonClassifier(nn.Module):
+    """Simple MLP classifier for two-class outputs."""
     def __init__(self):
         super().__init__()
         self.net = nn.Sequential(
@@ -16,6 +17,7 @@ class MoonClassifier(nn.Module):
 
 
 class DenoiserModel(nn.Module):
+    """Denoiser model implementing a diffusion-based generative approach."""
     # Implement Karras Elucidating the Design Space of Diffusion-Based Generative Models
     def __init__(
         self,
@@ -62,12 +64,14 @@ class DenoiserModel(nn.Module):
         self.device = device
 
     def forward(self, t, x_noisy):
+        """Computes the denoised sample given a noisy input at time t."""
         t_embeddings = self.time_embedding_net(t)
         x_noisy_time = torch.cat([x_noisy, t_embeddings], dim=1)
         x_denoised = self.net(x_noisy_time)
         return x_denoised
 
     def score(self, x, t):
+        """Computes the score function used for sampling."""
         t_embeddings = self.time_embedding_net(t)
         x_t = torch.cat([x, t_embeddings], dim=1)
         x_denoised = self.net(x_t)
@@ -77,10 +81,8 @@ class DenoiserModel(nn.Module):
         return score
 
     @torch.no_grad()
-    def sample(self, n=100, target_sum=None, classifier=None, target_label=None):
-        assert not (classifier is not None) ^ (
-            target_label is not None
-        ), "classifier and target_label should be both None or not None"
+    def sample(self, n=100):
+        """Generates samples by iterating through the sigma schedule."""
         x = self.sigma_schedule[0] * torch.randn((n, 2), device=self.device)
         for i in tqdm(range(self.num_steps - 1)):
             t_more_noisy = torch.tensor([self.sigma_schedule[i]], device=self.device)
@@ -89,51 +91,6 @@ class DenoiserModel(nn.Module):
             )
             # compute the score
             score = self.score(x, t_more_noisy.repeat(n, 1))
-            x_denoised = self(x_noisy=x, t=t_more_noisy.repeat(n, 1))
-            if target_sum is not None:
-
-                def f(point):
-                    point = point.unsqueeze(0)
-                    return self.forward(t=t_more_noisy.unsqueeze(0), x_noisy=point)
-
-                def batched_jacobian(points):  # [B, D] ->
-                    jacobian_fn = torch.func.jacfwd(f)
-                    jacobian_fn_vmap = torch.vmap(jacobian_fn)  # [B, D] -> [B, D, D]
-                    jacobian = jacobian_fn_vmap(points)
-                    return jacobian
-
-                jacobian = batched_jacobian(x).squeeze(1)
-                dl_df = 2 * (target_sum - x_denoised.sum(dim=1, keepdims=True))
-                df_dx = -(
-                    torch.ones((x.shape[0], 1, x.shape[-1]), device=self.device)
-                    @ jacobian
-                ).squeeze(1)
-                # df_dx = -torch.ones(
-                #     (x.shape[0], 1, x.shape[-1]), device=self.device
-                # ).squeeze(1)
-                score = score + dl_df * df_dx
-                print(f"{x_denoised.sum(dim=1).mean()=}")
-
-            if classifier is not None:
-
-                def f(denoised_point):
-                    pred = classifier(denoised_point)
-                    loss = torch.nn.functional.binary_cross_entropy_with_logits(
-                        pred, target_label
-                    )
-                    return loss
-
-                def batched_autograd(points):  # [B, D] ->
-                    jacobian_fn = torch.func.jacfwd(f)
-                    jacobian_fn_vmap = torch.vmap(jacobian_fn)  # [B, D] -> [B, D, D]
-                    jacobian = jacobian_fn_vmap(points)
-                    return jacobian
-
-                # gradient = batched_autograd(x_denoised).squeeze(1)
-                gradient = batched_autograd(x).squeeze(1)
-                score = gradient
-                # score = score + gradient
-            # update x_noisy though heun discretization
             x = x + score * (t_less_noisy - t_more_noisy)
             # if i != self.num_steps - 1:
             #    x = x + torch.sqrt(t_more_noisy ** 2 - t_less_noisy ** 2) * torch.randn_like(x)
