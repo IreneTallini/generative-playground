@@ -5,7 +5,7 @@ The code also contains a simple score matching implementation from scratches (th
 
 This repository contains code for comparing two generation options on the scikit-learn Moons dataset:
 1) score matching, implemented from scratches following [Elucidating the Design Space of Diffusion-Based Generative Models](https://arxiv.org/abs/2206.00364).
-2) gradient ascent on the logits of a simple binary classifier, where points in the Moons dataset are labeled 1 and outside 0. It doesn't work.
+2) gradient ascent on the logits of a simple binary classifier, where points in the Moons dataset are labeled 1 and outside 0.
 
 
 
