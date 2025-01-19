@@ -1,9 +1,13 @@
 # Generative Playground
 
-This repository contains code for comparing two generation options on the Moons dataset, 
-1) score matching, implemented from scratches following https://arxiv.org/abs/2206.00364 (Elucidating the Design Space of Diffusion-Based Generative Models).
-2) gradient ascent on the logits of a simple binary classifier, where points in the Moons dataset are labeled 1 and outside 0.
-Note that this is just a proof of concept (namely of whether 2) works or not), parameters need to be tuned for optimal performance of the score model.
+The original idea of this code was to test if gradient ascent on the logits function of a classifier is a good generative model (spoiler, in the simple implementation here it isn't). 
+The code also contains a simple score matching implementation from scratches (the original idea was to use it as a baseline) and can be useful to someone.
+
+This repository contains code for comparing two generation options on the scikit-learn Moons dataset:
+1) score matching, implemented from scratches following [Elucidating the Design Space of Diffusion-Based Generative Models](https://arxiv.org/abs/2206.00364).
+2) gradient ascent on the logits of a simple binary classifier, where points in the Moons dataset are labeled 1 and outside 0. It doesn't work.
+
+
 
 ## Installation
 
@@ -20,12 +24,7 @@ cd generative-playground
 3. Create and activate the conda environment:
 ```sh
 conda env create -f env.yaml
-conda activate cig
-```
-
-4. Install the package:
-```sh
-pip install -e .
+conda activate gp
 ```
 
 ## Usage
