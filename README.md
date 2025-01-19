@@ -3,7 +3,7 @@
 This repository contains code for comparing two generation options on the Moons dataset, 
 1) score matching, implemented from scratches following https://arxiv.org/abs/2206.00364 (Elucidating the Design Space of Diffusion-Based Generative Models).
 2) gradient ascent on the logits of a simple binary classifier, where points in the Moons dataset are labeled 1 and outside 0.
-Note that this is just a proof of concept, parameters need to be tuned for optimal performance of the two methods.
+Note that this is just a proof of concept (namely of whether 2) works or not), parameters need to be tuned for optimal performance of the score model.
 
 ## Installation
 
@@ -14,13 +14,13 @@ git clone git@github.com:IreneTallini/generative-playground.git
 
 2. Navigate to the project folder:
 ```sh
-cd generative_playground
+cd generative-playground
 ```
 
 3. Create and activate the conda environment:
 ```sh
 conda env create -f env.yaml
-conda activate generative-playground
+conda activate cig
 ```
 
 4. Install the package:
