@@ -3,7 +3,7 @@ import numpy as np
 import torch
 from torch.utils.data import Dataset   
 
-class MoonDataset(Dataset):
+class MoonDatasetWithNoise(Dataset):
     """Moon dataset with random noise injection."""
     def __init__(self, num_samples):
         self.mean = torch.tensor([0.5, 0.25])

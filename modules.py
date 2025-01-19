@@ -5,11 +5,24 @@ from tqdm import tqdm
 
 
 class MoonClassifier(nn.Module):
-    """Simple MLP classifier for two-class outputs."""
-    def __init__(self):
+    """MLP classifier for two-class outputs."""
+    def __init__(self, input_size=2, hidden_sizes=[64, 128, 256], output_size=2, device="cpu"):
         super().__init__()
         self.net = nn.Sequential(
-            nn.Linear(2, 64), nn.ReLU(), nn.Linear(64, 64), nn.ReLU(), nn.Linear(64, 2)
+            nn.Sequential(
+                nn.Linear(
+                    input_size, hidden_sizes[0], device=device
+                ),
+                nn.ReLU(),
+            ),
+            *[
+                nn.Sequential(
+                    nn.Linear(hidden_sizes[i], hidden_sizes[i + 1], device=device),
+                    nn.ReLU(),
+                )
+                for i in range(len(hidden_sizes) - 1)
+            ],
+            nn.Linear(hidden_sizes[-1], output_size, device=device),
         )
 
     def forward(self, x):
@@ -17,8 +30,7 @@ class MoonClassifier(nn.Module):
 
 
 class DenoiserModel(nn.Module):
-    """Denoiser model implementing a diffusion-based generative approach."""
-    # Implement Karras Elucidating the Design Space of Diffusion-Based Generative Models
+    """Denoiser model implementing score matching as in https://arxiv.org/abs/2206.00364."""
     def __init__(
         self,
         input_size=2,
@@ -92,6 +104,7 @@ class DenoiserModel(nn.Module):
             # compute the score
             score = self.score(x, t_more_noisy.repeat(n, 1))
             x = x + score * (t_less_noisy - t_more_noisy)
-            # if i != self.num_steps - 1:
-            #    x = x + torch.sqrt(t_more_noisy ** 2 - t_less_noisy ** 2) * torch.randn_like(x)
+            # add stochasticity to sampling
+            if i != self.num_steps - 1:
+               x = x + torch.sqrt(t_more_noisy ** 2 - t_less_noisy ** 2) * torch.randn_like(x)
         return x
